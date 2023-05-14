@@ -1,0 +1,6 @@
+/.vscode/
+/builddir/
+/log/
+
+/Tracelog.txt
+/util.ps1
