@@ -1,17 +1,23 @@
 #include <common.h>
 #include <hook.h>
+#include <inject.h>
 
-#define LOGFILE "D:\\Cpp\\No Delete\\Tracelog.txt"
+int main(int argc, char **argv) {
+  std::string cwd;
+  winapi::get_cwd(cwd);
 
-DWORD DllMain(HINSTANCE hInstance, DWORD reason, LPVOID _reserved) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(LOGFILE);
-        spdlog::set_default_logger(std::make_shared<spdlog::logger>("FileLogger", file_sink));
-        logger::set_level(logger::level::debug);
-        hook::init();
-    } else if (reason == DLL_PROCESS_DETACH) {
-        hook::cleanup();
-    }
+  auto file_sink =
+      std::make_shared<spdlog::sinks::basic_file_sink_mt>("./base.log", true);
+  logger::set_default_logger(
+      std::make_shared<spdlog::logger>("FileLogger", file_sink));
 
-    return true;
+  logger::set_level(logger::level::debug);
+  logger::flush_on(logger::level::debug);
+
+  inject::init();
+  auto pidlist = inject::get_explorer_pids();
+
+  for (auto p : pidlist) {
+    inject::inject_to_pid(p);
+  }
 }
