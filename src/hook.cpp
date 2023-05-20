@@ -13,7 +13,6 @@ void hook::attach() {
     dll_dir = fs::path(winapi::get_module_path(self)).parent_path();
 
     auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((dll_dir / fmt::format("inject_{}.log", GetCurrentProcessId())).string());
-
     logger::set_default_logger(std::make_shared<spdlog::logger>("FileLogger", file_sink));
     logger::set_level(logger::level::debug);
     logger::flush_on(logger::level::debug);

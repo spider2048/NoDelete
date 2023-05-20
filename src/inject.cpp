@@ -2,8 +2,9 @@
 #include <dia2.h>
 #include <inject.h>
 
-#define CHECK_FAIL(X) if (FAILED(hr)) CRITICAL(X " failed with hr:{:x}", (void*)hr)
-    
+#define CHECK_FAIL(X) \
+    if (FAILED(hr))   \
+    CRITICAL(X " failed with hr:{:x}", (void*)hr)
 
 fs::path inject::dll_path;
 
@@ -13,7 +14,7 @@ void inject::init() {
 
     try {
         inject::save_offsets("./shell32.pdb", (dll_path.parent_path() / OFFSET_FILE).string());
-    } catch(std::exception& e) {
+    } catch (std::exception& e) {
         std::cout << "Exception occured!" << e.what() << std::endl;
     }
 }
@@ -81,11 +82,11 @@ void inject::download_pdb_file(const std::string& dest) {
     std::string dll_data;
     dll_data.resize(file_sz);
     dll_file.read(W(dll_data), file_sz);
-    
-    auto        loc_guid = dll_data.find("shell32.pdb") - 20;
+
+    auto loc_guid = dll_data.find("shell32.pdb") - 20;
     DEBUG("loc_guid is:{}", loc_guid)
     std::string _guid = dll_data.substr(loc_guid, 16);
-    
+
     dll_data.clear();
 
     GUID guid;
@@ -179,10 +180,10 @@ void inject::save_offsets(const std::string& pdb_path, const std::string& output
     DEBUG("Found functions at offsets:[{}, {}]", deleteitems_off, dialog_off)
 
     std::ofstream               fd(output_archive);
-    cereal::BinaryOutputArchive    archive(fd);
-    fn_offsets o = {.fn_deleteitems = deleteitems_off, .fn_dlgproc = dialog_off};
+    cereal::BinaryOutputArchive archive(fd);
+    fn_offsets                  o = {.fn_deleteitems = deleteitems_off, .fn_dlgproc = dialog_off};
     archive(o);
     fd.close();
-    
+
     DEBUG("Finished saving offsets to {} [{:x}, {:x}]", output_archive, dialog_off, deleteitems_off);
 }
