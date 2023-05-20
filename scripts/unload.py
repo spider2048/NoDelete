@@ -1,19 +1,27 @@
-import ctypes
-from ctypes import wintypes
-import psutil
+from subprocess import check_output as CO
 import os
-
-kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
-
-PROCESS_ALL_ACCESS = 0x1F0FFF
-INVALID_HANDLE_VALUE = -1
-MEM_RELEASE = 0x8000
+import psutil
+import logging as logger
+logger.basicConfig(format="[ejector] %(levelname)s %(message)s", level=logger.INFO)
 
 def unload_file_from_process(pid, filename):
-    os.system(f"Injector -e -p {pid} \"{filename}\"")
+    cmd = ("Injector", "-e", "-p", f"{pid}", f"{filename}")
+    try: 
+        out = CO(cmd)
+        if b'Could not find' in out:
+            logger.info(f"{filename} is not in explorer.exe:{pid}")
+        else:
+            logger.info(f"ejected {filename} from explorer.exe:{pid}")
+    except Exception as e:
+        logger.error(f"ejecting {filename} from {pid} failed with {e}")
 
-filename = r"D:\Cpp\No Delete\builddir\NoDelete.exe"
-filename2 = r"D:\Cpp\No Delete\builddir\NoDeleteH.dll"
+files = (
+    r"D:\Cpp\No Delete\builddir\NoDelete.exe",
+    r"D:\Cpp\No Delete\builddir\NoDeleteH.dll",
+    r"D:\Cpp\No Delete\builddir_release\NoDelete.exe",
+    r"D:\Cpp\No Delete\builddir_release\NoDeleteH.dll",
+)
+
 def find_process_by_name(process_name):
     pids = []
     for proc in psutil.process_iter(['pid', 'name']):
@@ -22,6 +30,5 @@ def find_process_by_name(process_name):
     return pids
 
 for p in find_process_by_name('explorer.exe'):
-    unload_file_from_process(p, filename)
-    unload_file_from_process(p, filename2)
-
+    for f in files:
+        unload_file_from_process(p, f)
