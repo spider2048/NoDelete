@@ -4,7 +4,7 @@ cc = meson.get_compiler('cpp')
 target_name = 'NoDelete'
 target_dll_name = 'NoDeleteH'
 target_dll = target_dll_name + '.dll'
-offset_file = 'offsets.xml'
+offset_file = 'offsets.bin'
 
 dep_detours = declare_dependency(
     include_directories: include_directories('D:\Libraries\Detours\include'),
