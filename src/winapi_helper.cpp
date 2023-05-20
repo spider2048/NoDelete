@@ -1,4 +1,5 @@
 #include <winapi_helper.h>
+namespace fs = std::filesystem;
 
 namespace winapi {
     HMODULE load_library_as_datafile(const std::string &lib) {
@@ -160,33 +161,25 @@ namespace winapi {
 };  // namespace winapi
 
 namespace shell {
-    bool get_files_from_do(IDataObject *pDataObject, std::vector<std::wstring> &dst) {
-        if (pDataObject == nullptr) {
-            CRITICAL("pDataObject is null")
-            return false;
-        }
+    void get_files_from_do(IDataObject *pDataObject, std::vector<fs::path> &dst) {
+        FORMATETC formatEtc = {CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+        STGMEDIUM stgMedium = {TYMED_HGLOBAL, {nullptr}};
 
-        try {
-            FORMATETC formatEtc = {CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
-            STGMEDIUM stgMedium = {TYMED_HGLOBAL, {nullptr}};
+        if (SUCCEEDED(pDataObject->GetData(&formatEtc, &stgMedium))) {
+            HDROP hDrop = (HDROP)stgMedium.hGlobal;
+            UINT  fileCount = DragQueryFileA(hDrop, 0xFFFFFFFF, nullptr, 0);
+            for (UINT i = 0; i < fileCount; i++) {
+                std::string fp;
+                fp.resize(MAX_PATH);
 
-            if (SUCCEEDED(pDataObject->GetData(&formatEtc, &stgMedium))) {
-                HDROP hDrop = (HDROP)stgMedium.hGlobal;
-                UINT  fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
-                for (UINT i = 0; i < fileCount; i++) {
-                    std::wstring fp;
-                    fp.resize(MAX_PATH);
-                    if (DragQueryFileW(hDrop, i, WW(fp), MAX_PATH) > 0)
-                        dst.push_back(fp);
+                UINT sz;
+                if ((sz = DragQueryFileA(hDrop, i, W(fp), MAX_PATH)) > 0) {
+                    fp.resize(sz);
+                    dst.push_back(fs::path(fp));
                 }
-
-                ReleaseStgMedium(&stgMedium);
             }
-        } catch (std::exception &e) {
-            CRITICAL("caught {}", e.what());
-            return false;
-        }
 
-        return true;
+            ReleaseStgMedium(&stgMedium);
+        }
     }
 };  // namespace shell

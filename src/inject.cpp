@@ -44,7 +44,7 @@ std::vector<DWORD> inject::get_explorer_pids() {
 
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
     if (hSnapshot == INVALID_HANDLE_VALUE) {
-        DEBUG("hSnapShot is invalid");
+        CRITICAL("hSnapShot is invalid");
         return pidlist;
     }
 
@@ -53,7 +53,7 @@ std::vector<DWORD> inject::get_explorer_pids() {
 
     if (!Process32First(hSnapshot, &processEntry)) {
         CloseHandle(hSnapshot);
-        DEBUG("Process32First failed");
+        CRITICAL("Process32First failed");
         return pidlist;
     }
 

@@ -22,5 +22,5 @@ namespace winapi {
 };      // namespace winapi
 
 namespace shell {
-    bool get_files_from_do(IDataObject* pDataObject, std::vector<std::wstring>& dst);
+    void get_files_from_do(IDataObject* pDataObject, std::vector<std::filesystem::path>& dst);
 };

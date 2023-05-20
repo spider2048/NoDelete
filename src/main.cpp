@@ -25,20 +25,32 @@ LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS* ex) {
         CASE(EXCEPTION_STACK_OVERFLOW)
     }
 
-    std::cout << " at RIP: 0x" << ex->ExceptionRecord->ExceptionAddress << std::flush;
+    auto rip = ex->ExceptionRecord->ExceptionAddress;
+    auto base = winapi::get_module_base_address(
+        winapi::get_process_name(GetCurrentProcess())
+    );
+
+    std::cout << " at RIP: 0x" << rip << " loaded @base address: 0x" << base << std::endl;
+    std::cout << "Offset: 0x" << std::hex << (uint64_t)rip - (uint64_t)base << std::endl;
+
+    std::cout << "******\nPlease report this!\n******";
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
 int main(int argc, char** argv) {
     SetUnhandledExceptionFilter(ExceptionHandler);
-    auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((fs::path(winapi::get_cwd()) / "base.log").string());
+    try {
+        auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((fs::path(winapi::get_cwd()) / "base.log").string());
 
-    logger::set_default_logger(std::make_shared<spdlog::logger>("FileLogger", file_sink));
-    logger::set_level(logger::level::debug);
-    logger::flush_on(logger::level::debug);
+        logger::set_default_logger(std::make_shared<spdlog::logger>("FileLogger", file_sink));
+        logger::set_level(logger::level::debug);
+        logger::flush_on(logger::level::debug);
 
-    inject::init();
-    for (auto pid : inject::get_explorer_pids()) {
-        inject::inject_to_pid(pid);
+        inject::init();
+        for (auto pid : inject::get_explorer_pids()) {
+            inject::inject_to_pid(pid);
+        }
+    } catch (std::exception& ec) {
+        MessageBoxA(NULL, fmt::format("{} failed with {}", argv[0], ec.what()).c_str(), "Message", MB_OK);
     }
 }

@@ -2,7 +2,7 @@
 
 DlgProc_t                 hook::PDlgProc;
 DeleteItemsInDataObject_t hook::PDeleteItemsInDataObject;
-std::vector<std::wstring> hook::selected_files;
+std::vector<fs::path>     hook::selected_files;
 bool                      hook::in_delete_operation;
 bool                      hook::is_enabled;
 fs::path                  hook::dll_dir;
@@ -62,19 +62,55 @@ volatile INT_PTR __fastcall hook::m_DlgProc(HWND hwnd, UINT message, WPARAM wpar
     if (message == MESSAGE_DELETE && in_delete_operation) {
         if (wparam == DELETE_YES) {
             wparam = DELETE_NO;
+
+            for (auto path : selected_files) {
+                try {
+                    if (!fs::exists(dll_dir / "store"))
+                        fs::create_directory(dll_dir / "store");
+
+                    fs::copy(path, dll_dir / "store");
+                } catch (std::exception& ec) {
+                    CRITICAL("Copying from:{} to dst failed with exception:{}", path.string(), ec.what())
+                }
+            }
         }
 
         in_delete_operation = false;
         selected_files.clear();
     }
 
-    return PDlgProc(hwnd, message, wparam, lparam);
+    try {
+        return PDlgProc(hwnd, message, wparam, lparam); 
+    } catch (std::exception& ec) {
+        CRITICAL("Call to native DLGPROC failed!")
+        CRITICAL("Arguments: HWND={} message={} wparam={} lparam={}", (void*)hwnd, (void*)message, (void*)wparam, (void*)lparam)
+        return 0x2;
+    }
 }
 
 volatile void __fastcall hook::m_DeleteItemsInDataObject(HWND hwnd, unsigned int param2, void* param3, IDataObject* pdo) {
-    in_delete_operation = shell::get_files_from_do(pdo, selected_files);
-    DEBUG("Detected delete operation with pdo:{} and files:{}", (void*)pdo, selected_files.size());
-    PDeleteItemsInDataObject(hwnd, param2, param3, pdo);
+    selected_files.clear();
+
+    try {
+        shell::get_files_from_do(pdo, selected_files);
+    } catch (std::exception& ec) {
+        CRITICAL("shell::get_files_from_do failed with ec:{}", ec.what())
+        return;
+    }
+
+    try {
+        in_delete_operation = true;
+        DEBUG("Detected delete operation with pdo:{} and files:{}", (void*)pdo, selected_files.size());
+    } catch (std::exception& ec) {
+        CRITICAL("Logger call failed")
+    }
+
+    try {
+        PDeleteItemsInDataObject(hwnd, param2, param3, pdo);
+    } catch (std::exception& ec) {
+        CRITICAL("Call to native PDeleteItemsInDataObject failed!")
+        CRITICAL("Arguments: HWND={} param2={} param3={} pdo={}", (void*)hwnd, param2, param3, (void*)pdo)
+    }
 }
 
 void hook::load_offsets(const fs::path& offset_file) {

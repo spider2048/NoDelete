@@ -19,7 +19,6 @@
 #include <cereal/cereal.hpp>
 #include <cereal/types/memory.hpp>
 #include <cereal/archives/binary.hpp>
-#include <cereal/archives/xml.hpp>
 
 #include <util.h>
 #include <winapi_helper.h>
@@ -52,8 +51,6 @@
 namespace logger = spdlog;
 namespace fs = std::filesystem;
 
-#define DLGPROC_OFFSET 0x427c60
-#define DELETEITEMS_OFFSET 0x25f940
 #define MESSAGE_DELETE 0x111
 #define DELETE_YES 0x6
 #define DELETE_NO 0x2
