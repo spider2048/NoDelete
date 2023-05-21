@@ -1,7 +1,48 @@
 #include <winapi_helper.h>
 namespace fs = std::filesystem;
 
+#define CASE(X)      \
+    case X:          \
+        err += (#X); \
+        break;
+
 namespace winapi {
+    LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ex) {
+        std::string err;
+        switch (ex->ExceptionRecord->ExceptionCode) {
+            CASE(EXCEPTION_ACCESS_VIOLATION)
+            CASE(EXCEPTION_ARRAY_BOUNDS_EXCEEDED)
+            CASE(EXCEPTION_BREAKPOINT)
+            CASE(EXCEPTION_DATATYPE_MISALIGNMENT)
+            CASE(EXCEPTION_FLT_DENORMAL_OPERAND)
+            CASE(EXCEPTION_FLT_DIVIDE_BY_ZERO)
+            CASE(EXCEPTION_FLT_INEXACT_RESULT)
+            CASE(EXCEPTION_FLT_INVALID_OPERATION)
+            CASE(EXCEPTION_FLT_OVERFLOW)
+            CASE(EXCEPTION_FLT_STACK_CHECK)
+            CASE(EXCEPTION_FLT_UNDERFLOW)
+            CASE(EXCEPTION_ILLEGAL_INSTRUCTION)
+            CASE(EXCEPTION_IN_PAGE_ERROR)
+            CASE(EXCEPTION_INT_DIVIDE_BY_ZERO)
+            CASE(EXCEPTION_INT_OVERFLOW)
+            CASE(EXCEPTION_INVALID_DISPOSITION)
+            CASE(EXCEPTION_NONCONTINUABLE_EXCEPTION)
+            CASE(EXCEPTION_PRIV_INSTRUCTION)
+            CASE(EXCEPTION_SINGLE_STEP)
+            CASE(EXCEPTION_STACK_OVERFLOW)
+            default:
+                err += "CUSTOM ERROR";
+        }
+
+        auto rip = ex->ContextRecord->Rip;
+        auto base = winapi::get_module_handle(winapi::get_process_name(GetCurrentProcess()));
+
+        std::string errmsg = fmt::format("critical exception {:x} occured at rip={} base={} in pid:{}", err, rip, (void *)base, GetCurrentProcessId());
+        MessageBoxA(NULL, errmsg.c_str(), "Hook critical error", MB_OK | MB_ICONERROR);
+
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
     HMODULE load_library_as_datafile(const std::string &lib) {
         HMODULE ret = LoadLibraryExA(lib.c_str(), NULL, LOAD_LIBRARY_AS_DATAFILE);
         if (ret == nullptr) {
@@ -11,10 +52,14 @@ namespace winapi {
         return ret;
     }
 
-    std::string get_windows_dir() {
+    std::filesystem::path get_windows_dir() {
         std::string dst;
         dst.resize(MAX_PATH);
         auto sz = GetWindowsDirectoryA(W(dst), MAX_PATH);
+        if (sz == 0) {
+            CRITICAL("GetWindowsDirectoryA failed")
+        }
+
         dst[sz] = '\\';
         dst.resize(1 + sz);
         return dst;
@@ -22,7 +67,6 @@ namespace winapi {
 
     std::string get_process_name(HANDLE hProcess) {
         std::string dst;
-        dst.clear();
         dst.resize(MAX_PATH);
 
         DWORD sz = MAX_PATH;
@@ -34,7 +78,7 @@ namespace winapi {
         return dst;
     }
 
-    void get_process_basename(HANDLE hProcess, std::string &dst) {
+    void get_process_base_name(HANDLE hProcess, std::string &dst) {
         dst.clear();
         dst.resize(MAX_PATH);
 
@@ -55,15 +99,15 @@ namespace winapi {
         return loaded_addr - (uint64_t)hModule;
     }
 
-    HMODULE get_module_base_address(const std::string &module) {
+    HMODULE get_module_handle(const std::string &module) {
         HMODULE ret = GetModuleHandleA(module.c_str());
-        if (ret == NULL)
+        if (ret == nullptr)
             CRITICAL("GetModuleBaseAddress with module:{} failed!", module)
 
         return ret;
     }
 
-    std::string get_module_path(HMODULE hModule) {
+    std::string get_module_file_name(HMODULE hModule) {
         std::string dst;
         dst.resize(MAX_PATH);
         auto sz = GetModuleFileNameA(hModule, W(dst), MAX_PATH);
@@ -91,17 +135,28 @@ namespace winapi {
             basename.resize(MAX_PATH);
 
             if (!GetModuleBaseName(hProcess, hModule, W(basename), MAX_PATH)) {
-                CRITICAL("GetModuleBaseName for process:{} module:{} failed!", (void *)hProcess, (void *)hModule)
+                DEBUG("GetModuleBaseName for process:{} module:{} failed!", (void *)hProcess, (void *)hModule)
             }
 
             lowercase(basename);
-
             if (basename.find(modname) != -1) {
                 return hModule;
             }
         }
 
         return nullptr;
+    }
+
+    std::filesystem::path get_cwd() {
+        std::string dir;
+        dir.resize(MAX_PATH);
+        DWORD sz = GetCurrentDirectoryA(MAX_PATH, W(dir));
+        if (sz == 0) {
+            CRITICAL("GetCurrentDirectoryA failed");
+        }
+
+        dir.resize(sz);
+        return fs::path(dir);
     }
 
     namespace remote {
@@ -142,30 +197,27 @@ namespace winapi {
 
         void close(HANDLE hProcess) { CloseHandle(hProcess); }
     };  // namespace remote
-
-    std::string get_cwd() {
-        std::string dir;
-        dir.resize(MAX_PATH);
-        DWORD sz = GetCurrentDirectoryA(MAX_PATH, W(dir));
-        if (sz == 0) {
-            CRITICAL("GetCurrentDirectoryA failed");
-        }
-
-        if (dir[sz] != '\\') {
-            dir[sz] = '\\';
-        }
-
-        dir.resize(1 + sz);
-        return dir;
-    }
-};  // namespace winapi
+};      // namespace winapi
 
 namespace shell {
+    bool is_valid_do(IDataObject* pDataObject) {
+        FORMATETC fmt = {
+            .cfFormat = CF_TEXT,
+            .dwAspect = DVASPECT_CONTENT,
+            .lindex = -1, 
+            .tymed = TYMED_HGLOBAL
+        };
+        
+        STGMEDIUM stg = {TYMED_HGLOBAL, {nullptr}};
+        return pDataObject->GetData(&fmt, &stg) == S_OK;
+    }
+
     void get_files_from_do(IDataObject *pDataObject, std::vector<fs::path> &dst) {
         FORMATETC formatEtc = {CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
         STGMEDIUM stgMedium = {TYMED_HGLOBAL, {nullptr}};
 
-        if (SUCCEEDED(pDataObject->GetData(&formatEtc, &stgMedium))) {
+        auto hr = pDataObject->GetData(&formatEtc, &stgMedium);
+        if (SUCCEEDED(hr)) {
             HDROP hDrop = (HDROP)stgMedium.hGlobal;
             UINT  fileCount = DragQueryFileA(hDrop, 0xFFFFFFFF, nullptr, 0);
             for (UINT i = 0; i < fileCount; i++) {
@@ -180,6 +232,8 @@ namespace shell {
             }
 
             ReleaseStgMedium(&stgMedium);
+        } else {
+            CRITICAL("Getting data from the pdo failed!")
         }
     }
 };  // namespace shell

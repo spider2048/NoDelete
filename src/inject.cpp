@@ -9,24 +9,31 @@
 fs::path inject::dll_path;
 
 void inject::init() {
-    dll_path = fs::path(winapi::get_cwd() + TARGET_DLL);
-    DEBUG("DLL Name: {}", dll_path.string())
+    dll_path = winapi::get_cwd() / TARGET_DLL;
+    fs::path log_dir = winapi::get_cwd() / "log";
+    if (!fs::exists(log_dir))
+        fs::create_directory(log_dir);
 
     try {
         inject::save_offsets("./shell32.pdb", (dll_path.parent_path() / OFFSET_FILE).string());
     } catch (std::exception& e) {
-        std::cout << "Exception occured!" << e.what() << std::endl;
+        CRITICAL("Failed to save offsets to shell32.pdb!")
     }
 }
 
 void inject::inject_to_pid(DWORD pid) {
-    DEBUG("Injecting into: {}", pid);
     HANDLE hProcess = winapi::remote::open(pid);
+    try {
+        winapi::find_module_by_name(hProcess, dll_path.string());
+    } catch (std::exception& ec) {
+        DEBUG("Already injected into pid:{}", pid)
+        CloseHandle(hProcess);
+        return;
+    }
 
     void* remote_mem = winapi::remote::alloc(hProcess, dll_path.string().size());
     winapi::remote::write(hProcess, remote_mem, W(dll_path.string()), dll_path.string().size());
 
-    DEBUG("Creating remote thread for LoadLibraryA");
     HANDLE hRemoteThread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibraryA, remote_mem, NULL, NULL);
     if (!hRemoteThread) {
         CRITICAL("CreateRemoteThreaad into hProcess:{} failed!", hProcess);
@@ -35,17 +42,13 @@ void inject::inject_to_pid(DWORD pid) {
     WaitForSingleObject(hRemoteThread, INFINITE);
     winapi::remote::free(hProcess, remote_mem);
     winapi::remote::close(hProcess);
-
     DEBUG("Done injecting into PID:{}", pid);
 }
 
 std::vector<DWORD> inject::get_explorer_pids() {
-    std::vector<DWORD> pidlist;
-
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
     if (hSnapshot == INVALID_HANDLE_VALUE) {
-        CRITICAL("hSnapShot is invalid");
-        return pidlist;
+        CRITICAL("CreateToolhelp32Snapshot failed");
     }
 
     PROCESSENTRY32 processEntry;
@@ -54,9 +57,9 @@ std::vector<DWORD> inject::get_explorer_pids() {
     if (!Process32First(hSnapshot, &processEntry)) {
         CloseHandle(hSnapshot);
         CRITICAL("Process32First failed");
-        return pidlist;
     }
 
+    std::vector<DWORD> pidlist;
     do {
         HANDLE hProcess = winapi::remote::open(processEntry.th32ProcessID);
         if (hProcess == 0)
@@ -75,7 +78,8 @@ std::vector<DWORD> inject::get_explorer_pids() {
 
 void inject::download_pdb_file(const std::string& dest) {
     DEBUG("Downloading the pdb file to:{}", dest)
-    fs::path      shell32 = fs::path(winapi::get_windows_dir()) / "System32" / "shell32.dll";
+
+    fs::path      shell32 = winapi::get_windows_dir() / "System32" / "shell32.dll";
     std::ifstream dll_file(shell32.string(), std::ios::binary);
     size_t        file_sz = fs::file_size(shell32);
 
@@ -83,10 +87,13 @@ void inject::download_pdb_file(const std::string& dest) {
     dll_data.resize(file_sz);
     dll_file.read(W(dll_data), file_sz);
 
-    auto loc_guid = dll_data.find("shell32.pdb") - 20;
-    DEBUG("loc_guid is:{}", loc_guid)
-    std::string _guid = dll_data.substr(loc_guid, 16);
+    auto loc_shell32pdb = dll_data.find("shell32.pdb");
+    if (loc_shell32pdb == -1) {
+        CRITICAL("shell32.pdb not found in shell32.dll")
+    }
 
+    auto        loc_guid = loc_shell32pdb - 20;
+    std::string _guid = dll_data.substr(loc_guid, 16);
     dll_data.clear();
 
     GUID guid;
@@ -103,15 +110,15 @@ void inject::download_pdb_file(const std::string& dest) {
     std::erase(guidstr, '\x00');
 
     std::string cmd;
-    cmd += "curl -LO http://msdl.microsoft.com/download/symbols/shell32.pdb/" + guidstr + "/shell32.pdb -o " + dest;
+    cmd += "curl -L http://msdl.microsoft.com/download/symbols/shell32.pdb/" + guidstr + "/shell32.pdb -o " + dest;
     DEBUG("downloading shell32.pdb cmd:{}", cmd)
 
     auto ret = system(cmd.c_str());
     if (ret != 0) {
-        CRITICAL("Failed to download the pdb file!")
+        CRITICAL("Failed to download the pdb file to dest:{dest}")
     }
 
-    DEBUG("Downloaded the pdb file")
+    DEBUG("Downloaded the pdb file to {}", dest)
 }
 
 void inject::save_offsets(const std::string& pdb_path, const std::string& output_archive) {
@@ -119,8 +126,8 @@ void inject::save_offsets(const std::string& pdb_path, const std::string& output
         inject::download_pdb_file(pdb_path);
     }
 
-    std::wstring fn1 = L"?s_ConfirmDialogProc@CConfirmationDlgBase@@CA_JPEAUHWND__@@I_K_J@Z";
-    std::wstring fn2 = L"DeleteItemsInDataObject";
+    std::wstring fn_dialog = L"?s_ConfirmDialogProc@CConfirmationDlgBase@@CA_JPEAUHWND__@@I_K_J@Z";
+    std::wstring fn_deleteitems = L"DeleteItemsInDataObject";
     DWORD        dialog_off = -1, deleteitems_off = -1;
 
     CoInitialize(NULL);
@@ -151,17 +158,12 @@ void inject::save_offsets(const std::string& pdb_path, const std::string& output
         BSTR fnname;
         pFunction->get_name(&fnname);
         std::wstring fn(fnname);
-
-        DWORD symtag;
-        pFunction->get_symTag(&symtag);
-
-        if (fn.find(fn1) != -1) {
-            pFunction->get_addressOffset(&dialog_off);
-        } else if (fn.find(fn2) != -1) {
-            pFunction->get_addressOffset(&deleteitems_off);
-        }
-
         SysFreeString(fnname);
+
+        if (fn.find(fn_dialog) != -1)
+            pFunction->get_addressOffset(&dialog_off);
+        else if (fn.find(fn_deleteitems) != -1)
+            pFunction->get_addressOffset(&deleteitems_off);
         pFunction->Release();
     }
 
@@ -177,13 +179,15 @@ void inject::save_offsets(const std::string& pdb_path, const std::string& output
 
     dialog_off += 0x1000;
     deleteitems_off += 0x1000;
-    DEBUG("Found functions at offsets:[{}, {}]", deleteitems_off, dialog_off)
 
-    std::ofstream               fd(output_archive);
-    cereal::BinaryOutputArchive archive(fd);
-    fn_offsets                  o = {.fn_deleteitems = deleteitems_off, .fn_dlgproc = dialog_off};
-    archive(o);
-    fd.close();
+    try {
+        std::ofstream               fd(output_archive);
+        cereal::BinaryOutputArchive archive(fd);
+        fn_offsets                  o = {.fn_deleteitems = deleteitems_off, .fn_dlgproc = dialog_off};
+        archive(o);
+    } catch (std::exception& ec) {
+        CRITICAL("Failed to save offsets to {}", OFFSET_FILE)
+    }
 
     DEBUG("Finished saving offsets to {} [{:x}, {:x}]", output_archive, dialog_off, deleteitems_off);
 }

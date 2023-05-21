@@ -8,6 +8,7 @@
 #include <vector>
 #include <fstream>
 #include <filesystem>
+#include <thread>
 
 #include <windows.h>
 #include <detours.h>
@@ -23,10 +24,6 @@
 #include <util.h>
 #include <winapi_helper.h>
 
-#define CASE(X)            \
-    case X:                \
-        std::cout << (#X); \
-        break;
 #define W(X) const_cast<char *>(X.c_str())
 #define WW(X) const_cast<wchar_t *>(X.c_str())
 #define _DETOUR_TARGET(X) P##X
@@ -45,8 +42,13 @@
     ret = DetourAttach((void **)&_DETOUR_TARGET(X), _DETOUR_DEST(X)); \
     logger::debug("DetourAttach to {} returned:{}", #X, ret);
 
-#define DEBUG(FMT, ...) logger::debug("[{}:{} l{}] " FMT, __FILE__, __func__, __LINE__, __VA_ARGS__);
-#define CRITICAL(FMT, ...) logger::error("[{}:{} l{} E{}] " FMT, __FILE__, __func__, __LINE__, GetLastError(), __VA_ARGS__);
+#define DEBUG(FMT, ...) logger::debug("[{}:{} l{} E{}] " FMT, __FILE__, __func__, __LINE__, GetLastError(), __VA_ARGS__);
+#define CRITICAL(FMT, ...)                                                                                                   \
+    {                                                                                                                        \
+        std::string errmsg = fmt::format("[{}:{} l{} E{}] " FMT, __FILE__, __func__, __LINE__, GetLastError(), __VA_ARGS__); \
+        logger::error(errmsg);                                                                                               \
+        throw std::exception(errmsg.c_str());                                                                                \
+    }
 
 namespace logger = spdlog;
 namespace fs = std::filesystem;
@@ -66,3 +68,5 @@ struct fn_offsets {
         ar(fn_deleteitems, fn_dlgproc);
     }
 };
+
+#define CREATE_ERROR throw std::runtime_error(fmt::format("I'm an error at {}:{}", __FILE__, __LINE__));
