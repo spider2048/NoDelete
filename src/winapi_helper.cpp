@@ -200,14 +200,9 @@ namespace winapi {
 };      // namespace winapi
 
 namespace shell {
-    bool is_valid_do(IDataObject* pDataObject) {
-        FORMATETC fmt = {
-            .cfFormat = CF_TEXT,
-            .dwAspect = DVASPECT_CONTENT,
-            .lindex = -1, 
-            .tymed = TYMED_HGLOBAL
-        };
-        
+    bool is_valid_do(IDataObject *pDataObject) {
+        FORMATETC fmt = {.cfFormat = CF_TEXT, .dwAspect = DVASPECT_CONTENT, .lindex = -1, .tymed = TYMED_HGLOBAL};
+
         STGMEDIUM stg = {TYMED_HGLOBAL, {nullptr}};
         return pDataObject->GetData(&fmt, &stg) == S_OK;
     }

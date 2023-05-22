@@ -11,9 +11,6 @@ fs::path                  hook::store_dir;
 std::vector<std::thread>  hook::active_threads;
 
 void hook::attach() {
-    /* set exception handler */
-    SetUnhandledExceptionFilter(&winapi::ExceptionHandler);
-
     /* dll_dir*/
     HMODULE self = winapi::get_module_handle(TARGET_DLL);
     dll_dir = fs::path(winapi::get_module_file_name(self)).parent_path();
@@ -33,19 +30,13 @@ void hook::attach() {
         return;
     }
 
-    DEBUG("Enabled in pid:{}", GetCurrentProcessId());
-
     /* store files dir */
     store_dir = dll_dir / "store";
-    DEBUG("{}", store_dir.string())
     if (!fs::exists(store_dir))
         fs::create_directory(store_dir);
 
     /* load offsets */
-    fs::path offset_path = dll_dir / OFFSET_FILE;
-    if (!fs::exists(offset_path))
-        CRITICAL("{} file doesn't exist!", OFFSET_FILE)
-    load_offsets(offset_path);
+    load_offsets(dll_dir / OFFSET_FILE);
     uint64_t shell32_base = (uint64_t)winapi::get_module_handle("shell32.dll");
     PDeleteItemsInDataObject = (DeleteItemsInDataObject_t)(shell32_base + offsets.fn_deleteitems);
     PDlgProc = (DlgProc_t)(shell32_base + offsets.fn_dlgproc);
@@ -82,8 +73,8 @@ void hook::detach() {
 
 void hook::file_callback(const fs::path& path) {
     try {
-        fs::copy(path, store_dir);
-        // fs::remove(path);
+        fs::copy(path, store_dir, fs::copy_options::recursive);
+        SetFileAttributesW((store_dir / path.filename()).c_str(), FILE_ATTRIBUTE_NORMAL);
     } catch (std::exception& ec) {
         DEBUG("Copying from:{} to dst failed with exception:{}", path.string(), ec.what())
     }
@@ -100,10 +91,11 @@ volatile INT_PTR __fastcall hook::m_DlgProc(HWND hwnd, UINT message, WPARAM wpar
                 attribs |= FILE_ATTRIBUTE_SYSTEM;
                 attribs &= ~FILE_ATTRIBUTE_NORMAL;
 
-                auto ret = SetFileAttributesW(path.c_str(), attribs);
-                DEBUG("SetFileAttributesW returned:{} to file:{}", ret, path.string())
-
-                active_threads.push_back(std::thread(&hook::file_callback, path));
+                if (SetFileAttributesW(path.c_str(), attribs) != 0) {
+                    active_threads.push_back(std::thread(&hook::file_callback, path));
+                } else {
+                    DEBUG("SetFileAttributesW failed on path:{}", path.string())
+                }
             }
         }
 
@@ -126,6 +118,7 @@ volatile void __fastcall hook::m_DeleteItemsInDataObject(HWND hwnd, unsigned int
     try {
         shell::get_files_from_do(pdo, selected_files);
     } catch (std::exception& ec) {
+        /* Stop a stackoverflow here */
         DEBUG("shell::get_files_from_do failed with ec:{}", ec.what())
         return;
     }
@@ -135,7 +128,7 @@ volatile void __fastcall hook::m_DeleteItemsInDataObject(HWND hwnd, unsigned int
 
     try {
         PDeleteItemsInDataObject(hwnd, param2, param3, pdo);
-        pdo->Release();
+        pdo->Release();  // free the data object
     } catch (...) {
         DEBUG("Call to native PDeleteItemsInDataObject failed!")
         DEBUG("Arguments: HWND={} param2={} param3={} pdo={}", (void*)hwnd, param2, param3, (void*)pdo)
@@ -143,11 +136,16 @@ volatile void __fastcall hook::m_DeleteItemsInDataObject(HWND hwnd, unsigned int
 }
 
 void hook::load_offsets(const fs::path& offset_file) {
-    DEBUG("loading offsets from:{}", offset_file.string())
+    if (!fs::exists(offset_file))
+        CRITICAL("{} file doesn't exist!", OFFSET_FILE)
 
-    std::ifstream              fd(offset_file.string());
+    std::ifstream              fd(offset_file);
     cereal::BinaryInputArchive archive(fd);
 
-    archive(offsets);
-    DEBUG("loaded offsets from:{} with values:[{:x},{:x}]", offset_file.string(), offsets.fn_deleteitems, offsets.fn_dlgproc)
-}   
+    try {
+        archive(offsets);
+        DEBUG("loaded offsets from:{} with values:[{:x},{:x}]", offset_file.string(), offsets.fn_deleteitems, offsets.fn_dlgproc)
+    } catch (std::exception& ec) {
+        CRITICAL("Failed to load offsets!")
+    }
+}

@@ -76,11 +76,9 @@ std::vector<DWORD> inject::get_explorer_pids() {
     return pidlist;
 }
 
-void inject::download_pdb_file(const std::string& dest) {
-    DEBUG("Downloading the pdb file to:{}", dest)
-
+void inject::download_pdb_file(const fs::path& dest) {
     fs::path      shell32 = winapi::get_windows_dir() / "System32" / "shell32.dll";
-    std::ifstream dll_file(shell32.string(), std::ios::binary);
+    std::ifstream dll_file(shell32.c_str(), std::ios::binary);
     size_t        file_sz = fs::file_size(shell32);
 
     std::string dll_data;
@@ -89,7 +87,7 @@ void inject::download_pdb_file(const std::string& dest) {
 
     auto loc_shell32pdb = dll_data.find("shell32.pdb");
     if (loc_shell32pdb == -1) {
-        CRITICAL("shell32.pdb not found in shell32.dll")
+        CRITICAL("`shell32.pdb` not found in shell32.dll")
     }
 
     auto        loc_guid = loc_shell32pdb - 20;
@@ -110,19 +108,19 @@ void inject::download_pdb_file(const std::string& dest) {
     std::erase(guidstr, '\x00');
 
     std::string cmd;
-    cmd += "curl -L http://msdl.microsoft.com/download/symbols/shell32.pdb/" + guidstr + "/shell32.pdb -o " + dest;
-    DEBUG("downloading shell32.pdb cmd:{}", cmd)
+    cmd += "curl -qL http://msdl.microsoft.com/download/symbols/shell32.pdb/" + guidstr + "/shell32.pdb -o " + dest.string();
+    DEBUG("Downloading shell32.pdb cmd:{}", cmd)
 
     auto ret = system(cmd.c_str());
     if (ret != 0) {
-        CRITICAL("Failed to download the pdb file to dest:{dest}")
+        CRITICAL("failed to download the pdb file")
     }
 
-    DEBUG("Downloaded the pdb file to {}", dest)
+    DEBUG("Downloaded the pdb file to {}", dest.string())
 }
 
-void inject::save_offsets(const std::string& pdb_path, const std::string& output_archive) {
-    if (!fs::exists(fs::path(pdb_path))) {
+void inject::save_offsets(const fs::path& pdb_path, const fs::path& output_archive) {
+    if (!fs::exists(pdb_path)) {
         inject::download_pdb_file(pdb_path);
     }
 
@@ -137,7 +135,7 @@ void inject::save_offsets(const std::string& pdb_path, const std::string& output
     hr = CoCreateInstance(CLSID_DiaSource, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pDataSource));
     CHECK_FAIL("CoCreateInstance")
 
-    hr = pDataSource->loadDataFromPdb(s2ws(pdb_path).c_str());
+    hr = pDataSource->loadDataFromPdb(pdb_path.c_str());
     CHECK_FAIL("pDataSource->loadDataFromPdb")
 
     IDiaSession* pSession;
@@ -189,5 +187,5 @@ void inject::save_offsets(const std::string& pdb_path, const std::string& output
         CRITICAL("Failed to save offsets to {}", OFFSET_FILE)
     }
 
-    DEBUG("Finished saving offsets to {} [{:x}, {:x}]", output_archive, dialog_off, deleteitems_off);
+    DEBUG("Finished saving offsets to {} [{:x}, {:x}]", output_archive.string(), dialog_off, deleteitems_off);
 }

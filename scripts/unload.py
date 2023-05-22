@@ -9,7 +9,7 @@ def unload_file_from_process(pid, filename):
     try: 
         out = CO(cmd)
         if b'Could not find' in out:
-            logger.info(f"{filename} is not in explorer.exe:{pid}")
+            logger.info(f"{filename} is not present in explorer.exe:{pid}")
         else:
             logger.info(f"ejected {filename} from explorer.exe:{pid}")
     except Exception as e:

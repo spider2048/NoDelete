@@ -2,8 +2,8 @@
 
 class inject {
     static fs::path dll_path;
-    static void     download_pdb_file(const std::string& dest);
-    static void     save_offsets(const std::string& pdb_path, const std::string& output_path);
+    static void     download_pdb_file(const fs::path& dest);
+    static void     save_offsets(const fs::path& pdb_path, const fs::path& output_path);
 
    public:
     static void               init();

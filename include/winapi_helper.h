@@ -25,4 +25,4 @@ namespace winapi {
 namespace shell {
     bool is_valid_do(IDataObject* pDataObject);
     void get_files_from_do(IDataObject* pDataObject, std::vector<std::filesystem::path>& dst);
-};
+};  // namespace shell
