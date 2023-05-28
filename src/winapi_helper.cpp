@@ -200,13 +200,6 @@ namespace winapi {
 };      // namespace winapi
 
 namespace shell {
-    bool is_valid_do(IDataObject *pDataObject) {
-        FORMATETC fmt = {.cfFormat = CF_TEXT, .dwAspect = DVASPECT_CONTENT, .lindex = -1, .tymed = TYMED_HGLOBAL};
-
-        STGMEDIUM stg = {TYMED_HGLOBAL, {nullptr}};
-        return pDataObject->GetData(&fmt, &stg) == S_OK;
-    }
-
     void get_files_from_do(IDataObject *pDataObject, std::vector<fs::path> &dst) {
         FORMATETC formatEtc = {CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
         STGMEDIUM stgMedium = {TYMED_HGLOBAL, {nullptr}};
@@ -227,8 +220,6 @@ namespace shell {
             }
 
             ReleaseStgMedium(&stgMedium);
-        } else {
-            CRITICAL("Getting data from the pdo failed!")
         }
     }
 };  // namespace shell

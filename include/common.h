@@ -19,7 +19,7 @@
 #include <psapi.h>
 #include <cereal/cereal.hpp>
 #include <cereal/types/memory.hpp>
-#include <cereal/archives/binary.hpp>
+#include <cereal/archives/xml.hpp>
 
 #include <util.h>
 #include <winapi_helper.h>
@@ -47,7 +47,7 @@
     {                                                                                                                        \
         std::string errmsg = fmt::format("[{}:{} l{} E{}] " FMT, __FILE__, __func__, __LINE__, GetLastError(), __VA_ARGS__); \
         logger::error(errmsg);                                                                                               \
-        throw std::exception(errmsg.c_str());                                                                                \
+        throw std::runtime_error(errmsg.c_str());                                                                            \
     }
 
 namespace logger = spdlog;
@@ -68,5 +68,3 @@ struct fn_offsets {
         ar(fn_deleteitems, fn_dlgproc);
     }
 };
-
-#define CREATE_ERROR throw std::runtime_error(fmt::format("I'm an error at {}:{}", __FILE__, __LINE__));

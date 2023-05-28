@@ -4,7 +4,6 @@ DlgProc_t                 hook::PDlgProc;
 DeleteItemsInDataObject_t hook::PDeleteItemsInDataObject;
 std::vector<fs::path>     hook::selected_files;
 bool                      hook::in_delete_operation;
-bool                      hook::is_enabled;
 fs::path                  hook::dll_dir;
 fn_offsets                hook::offsets;
 fs::path                  hook::store_dir;
@@ -22,13 +21,6 @@ void hook::attach() {
     logger::set_default_logger(std::make_shared<spdlog::logger>("FileLogger", file_sink));
     logger::set_level(logger::level::debug);
     logger::flush_on(logger::level::debug);
-
-    /* command line check (disable in root process) */
-    if (std::string(GetCommandLineA()).find("/factory") == -1) {
-        DEBUG("Disabled in pid:{}", GetCurrentProcessId());
-        is_enabled = false;
-        return;
-    }
 
     /* store files dir */
     store_dir = dll_dir / "store";
@@ -53,10 +45,6 @@ void hook::attach() {
 }
 
 void hook::detach() {
-    if (!is_enabled) {
-        return;
-    }
-
     DETOUR_INIT
     DETOUR_DETACH(DeleteItemsInDataObject)
     DETOUR_DETACH(DlgProc)
@@ -75,38 +63,27 @@ void hook::file_callback(const fs::path& path) {
     try {
         fs::copy(path, store_dir, fs::copy_options::recursive);
         SetFileAttributesW((store_dir / path.filename()).c_str(), FILE_ATTRIBUTE_NORMAL);
+        fs::remove(path);
     } catch (std::exception& ec) {
         DEBUG("Copying from:{} to dst failed with exception:{}", path.string(), ec.what())
     }
 }
 
 volatile INT_PTR __fastcall hook::m_DlgProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
-    if (message == MESSAGE_DELETE && in_delete_operation) {
-        if (wparam == DELETE_YES) {
-            wparam = DELETE_NO;
-
-            for (const auto& path : selected_files) {
-                DWORD attribs = GetFileAttributesW(path.c_str());
-                attribs |= FILE_ATTRIBUTE_HIDDEN;
-                attribs |= FILE_ATTRIBUTE_SYSTEM;
-                attribs &= ~FILE_ATTRIBUTE_NORMAL;
-
-                if (SetFileAttributesW(path.c_str(), attribs) != 0) {
-                    active_threads.push_back(std::thread(&hook::file_callback, path));
-                } else {
-                    DEBUG("SetFileAttributesW failed on path:{}", path.string())
-                }
+    __try {
+        if (message == MESSAGE_DELETE && in_delete_operation) {
+            if (wparam == DELETE_YES) {
+                wparam = DELETE_NO;
+                hide_files();
             }
+
+            in_delete_operation = false;
+            selected_files.clear();
         }
 
-        in_delete_operation = false;
-        selected_files.clear();
-    }
-
-    try {
         return PDlgProc(hwnd, message, wparam, lparam);
-    } catch (...) {
-        DEBUG("Call to native DLGPROC failed!")
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        DEBUG("Call to native DLGPROC failed with code:{:x}", GetExceptionCode())
         DEBUG("Arguments: HWND={} message={} wparam={} lparam={}", (void*)hwnd, (void*)message, (void*)wparam, (void*)lparam)
         return 0x2;
     }
@@ -115,22 +92,16 @@ volatile INT_PTR __fastcall hook::m_DlgProc(HWND hwnd, UINT message, WPARAM wpar
 volatile void __fastcall hook::m_DeleteItemsInDataObject(HWND hwnd, unsigned int param2, void* param3, IDataObject* pdo) {
     selected_files.clear();
 
-    try {
-        shell::get_files_from_do(pdo, selected_files);
-    } catch (std::exception& ec) {
-        /* Stop a stackoverflow here */
-        DEBUG("shell::get_files_from_do failed with ec:{}", ec.what())
-        return;
-    }
+    shell::get_files_from_do(pdo, selected_files);
 
     in_delete_operation = true;
     DEBUG("Detected delete operation with pdo:{} and files:{}", (void*)pdo, selected_files.size());
 
-    try {
+    __try {
         PDeleteItemsInDataObject(hwnd, param2, param3, pdo);
         pdo->Release();  // free the data object
-    } catch (...) {
-        DEBUG("Call to native PDeleteItemsInDataObject failed!")
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        DEBUG("Call to native PDeleteItemsInDataObject failed with code:{:x}", GetExceptionCode())
         DEBUG("Arguments: HWND={} param2={} param3={} pdo={}", (void*)hwnd, param2, param3, (void*)pdo)
     }
 }
@@ -139,13 +110,28 @@ void hook::load_offsets(const fs::path& offset_file) {
     if (!fs::exists(offset_file))
         CRITICAL("{} file doesn't exist!", OFFSET_FILE)
 
-    std::ifstream              fd(offset_file);
-    cereal::BinaryInputArchive archive(fd);
+    std::ifstream           fd(offset_file);
+    cereal::XMLInputArchive archive(fd);
 
     try {
         archive(offsets);
         DEBUG("loaded offsets from:{} with values:[{:x},{:x}]", offset_file.string(), offsets.fn_deleteitems, offsets.fn_dlgproc)
     } catch (std::exception& ec) {
         CRITICAL("Failed to load offsets!")
+    }
+}
+
+void hook::hide_files() {
+    for (const auto& path : selected_files) {
+        DWORD attribs = GetFileAttributesW(path.c_str());
+        attribs |= FILE_ATTRIBUTE_HIDDEN;
+        attribs |= FILE_ATTRIBUTE_SYSTEM;
+        attribs &= ~FILE_ATTRIBUTE_NORMAL;
+
+        if (SetFileAttributesW(path.c_str(), attribs) != 0) {
+            active_threads.push_back(std::thread(&hook::file_callback, path));
+        } else {
+            DEBUG("SetFileAttributesW failed on path:{}", path.string())
+        }
     }
 }

@@ -16,9 +16,7 @@ def unload_file_from_process(pid, filename):
         logger.error(f"ejecting {filename} from {pid} failed with {e}")
 
 files = (
-    r"D:\Cpp\No Delete\builddir\NoDelete.exe",
     r"D:\Cpp\No Delete\builddir\NoDeleteH.dll",
-    r"D:\Cpp\No Delete\builddir_release\NoDelete.exe",
     r"D:\Cpp\No Delete\builddir_release\NoDeleteH.dll",
 )
 

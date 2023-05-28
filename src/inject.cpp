@@ -4,21 +4,24 @@
 
 #define CHECK_FAIL(X) \
     if (FAILED(hr))   \
-    CRITICAL(X " failed with hr:{:x}", (void*)hr)
+    CRITICAL(X " failed with hr:{}", (void*)hr)
 
 fs::path inject::dll_path;
 
 void inject::init() {
-    dll_path = winapi::get_cwd() / TARGET_DLL;
-    fs::path log_dir = winapi::get_cwd() / "log";
+    fs::path cwd = winapi::get_cwd();
+    fs::path log_dir = cwd / "log";
+    dll_path = cwd / TARGET_DLL;
+
+    auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((log_dir / "base.log").string());
+    logger::set_default_logger(std::make_shared<spdlog::logger>("FileLogger", file_sink));
+    logger::set_level(logger::level::debug);
+    logger::flush_on(logger::level::debug);
+
     if (!fs::exists(log_dir))
         fs::create_directory(log_dir);
 
-    try {
-        inject::save_offsets("./shell32.pdb", (dll_path.parent_path() / OFFSET_FILE).string());
-    } catch (std::exception& e) {
-        CRITICAL("Failed to save offsets to shell32.pdb!")
-    }
+    inject::save_offsets("./shell32.pdb", cwd / OFFSET_FILE);
 }
 
 void inject::inject_to_pid(DWORD pid) {
@@ -31,18 +34,17 @@ void inject::inject_to_pid(DWORD pid) {
         return;
     }
 
-    void* remote_mem = winapi::remote::alloc(hProcess, dll_path.string().size());
-    winapi::remote::write(hProcess, remote_mem, W(dll_path.string()), dll_path.string().size());
-
-    HANDLE hRemoteThread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibraryA, remote_mem, NULL, NULL);
-    if (!hRemoteThread) {
-        CRITICAL("CreateRemoteThreaad into hProcess:{} failed!", hProcess);
+    try {
+        void* remote_mem = winapi::remote::alloc(hProcess, dll_path.string().size());
+        winapi::remote::write(hProcess, remote_mem, W(dll_path.string()), dll_path.string().size());
+        HANDLE hRemoteThread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibraryA, remote_mem, NULL, NULL);
+        WaitForSingleObject(hRemoteThread, INFINITE);
+        winapi::remote::free(hProcess, remote_mem);
+        winapi::remote::close(hProcess);
+        DEBUG("Done injecting into PID:{}", pid);
+    } catch (std::exception& ec) {
+        DEBUG("Failed to inject to PID:{} with error:{}", pid, ec.what())
     }
-
-    WaitForSingleObject(hRemoteThread, INFINITE);
-    winapi::remote::free(hProcess, remote_mem);
-    winapi::remote::close(hProcess);
-    DEBUG("Done injecting into PID:{}", pid);
 }
 
 std::vector<DWORD> inject::get_explorer_pids() {
@@ -113,7 +115,7 @@ void inject::download_pdb_file(const fs::path& dest) {
 
     auto ret = system(cmd.c_str());
     if (ret != 0) {
-        CRITICAL("failed to download the pdb file")
+        CRITICAL("Failed to download shell32.pdb file")
     }
 
     DEBUG("Downloaded the pdb file to {}", dest.string())
@@ -124,12 +126,14 @@ void inject::save_offsets(const fs::path& pdb_path, const fs::path& output_archi
         inject::download_pdb_file(pdb_path);
     }
 
+    DEBUG("Acquiring offsets from pdb file ...")
     std::wstring fn_dialog = L"?s_ConfirmDialogProc@CConfirmationDlgBase@@CA_JPEAUHWND__@@I_K_J@Z";
     std::wstring fn_deleteitems = L"DeleteItemsInDataObject";
     DWORD        dialog_off = -1, deleteitems_off = -1;
 
-    CoInitialize(NULL);
     HRESULT hr;
+    hr = CoInitialize(NULL);
+    CHECK_FAIL("CoInitialize")
 
     IDiaDataSource* pDataSource;
     hr = CoCreateInstance(CLSID_DiaSource, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pDataSource));
@@ -172,19 +176,21 @@ void inject::save_offsets(const fs::path& pdb_path, const fs::path& output_archi
     CoUninitialize();
 
     if (dialog_off == -1 || deleteitems_off == -1) {
-        CRITICAL("All functions are not found: off1:{:x} off2:{:x}", dialog_off, deleteitems_off)
+        // CRITICAL("All functions are not found: off1:{:x} off2:{:x}", dialog_off, deleteitems_off)
+        MessageBoxA(NULL, "All functions are not found!", "Error Injecting to process", MB_OK | MB_ICONERROR);
     }
 
     dialog_off += 0x1000;
     deleteitems_off += 0x1000;
 
+    DEBUG("trying to save offsets ...")
     try {
-        std::ofstream               fd(output_archive);
-        cereal::BinaryOutputArchive archive(fd);
-        fn_offsets                  o = {.fn_deleteitems = deleteitems_off, .fn_dlgproc = dialog_off};
+        std::ofstream            fd(output_archive);
+        cereal::XMLOutputArchive archive(fd);
+        fn_offsets               o = {.fn_deleteitems = deleteitems_off, .fn_dlgproc = dialog_off};
         archive(o);
     } catch (std::exception& ec) {
-        CRITICAL("Failed to save offsets to {}", OFFSET_FILE)
+        CRITICAL("Failed to save offsets to: {}", output_archive.string())
     }
 
     DEBUG("Finished saving offsets to {} [{:x}, {:x}]", output_archive.string(), dialog_off, deleteitems_off);
