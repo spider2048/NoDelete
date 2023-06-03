@@ -61,8 +61,21 @@ void hook::detach() {
 
 void hook::file_callback(const fs::path& path) {
     try {
-        fs::copy(path, store_dir, fs::copy_options::recursive);
-        SetFileAttributesW((store_dir / path.filename()).c_str(), FILE_ATTRIBUTE_NORMAL);
+		fs::path ctx_store_dir = store_dir / std::to_string(GetTickCount());
+		fs::create_directory(ctx_store_dir);
+        fs::path new_path = ctx_store_dir / path.filename();
+		
+        /* copy file */
+        fs::copy(path, new_path, fs::copy_options::recursive);
+
+        /* set attributes */
+		DWORD attribs = GetFileAttributesW(path.c_str());
+        attribs &= ~(FILE_ATTRIBUTE_SYSTEM);
+        attribs &= ~(FILE_ATTRIBUTE_HIDDEN);
+        attribs |= FILE_ATTRIBUTE_NORMAL;
+        SetFileAttributesW(new_path.c_str(), attribs);
+
+        /* cleanup */
         fs::remove(path);
     } catch (std::exception& ec) {
         DEBUG("Copying from:{} to dst failed with exception:{}", path.string(), ec.what())
@@ -70,17 +83,18 @@ void hook::file_callback(const fs::path& path) {
 }
 
 volatile INT_PTR __fastcall hook::m_DlgProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
-    __try {
-        if (message == MESSAGE_DELETE && in_delete_operation) {
-            if (wparam == DELETE_YES) {
-                wparam = DELETE_NO;
-                hide_files();
-            }
+    __try { /* Prevent most of the crashes */
+	if (message == MESSAGE_DELETE && in_delete_operation) {
+		if (wparam == DELETE_YES) {
+			wparam = DELETE_NO;
+			hide_files();
+		}
 
-            in_delete_operation = false;
-            selected_files.clear();
-        }
+		in_delete_operation = false;
+		selected_files.clear();
+	}
 
+        /* native dlgproc */
         return PDlgProc(hwnd, message, wparam, lparam);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         DEBUG("Call to native DLGPROC failed with code:{:x}", GetExceptionCode())
@@ -90,14 +104,13 @@ volatile INT_PTR __fastcall hook::m_DlgProc(HWND hwnd, UINT message, WPARAM wpar
 }
 
 volatile void __fastcall hook::m_DeleteItemsInDataObject(HWND hwnd, unsigned int param2, void* param3, IDataObject* pdo) {
+    __try { /* Prevent most of the crashes */
     selected_files.clear();
-
     shell::get_files_from_do(pdo, selected_files);
 
     in_delete_operation = true;
     DEBUG("Detected delete operation with pdo:{} and files:{}", (void*)pdo, selected_files.size());
 
-    __try {
         PDeleteItemsInDataObject(hwnd, param2, param3, pdo);
         pdo->Release();  // free the data object
     } __except (EXCEPTION_EXECUTE_HANDLER) {
