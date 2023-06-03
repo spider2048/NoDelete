@@ -22,4 +22,4 @@ Yet to implement the `auto-injection` feature. This will be implemented on deman
 
 ## Disclaimer
 I am not responsible for any damage caused to you by using this source code.
-Don't be scared if `explorer.exe` and report the issue in #Issues with your logs.
+Don't be scared if `explorer.exe` crashes but report the issue in #Issues with your logs.
