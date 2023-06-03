@@ -4,6 +4,8 @@ import psutil
 import logging as logger
 logger.basicConfig(format="[ejector] %(levelname)s %(message)s", level=logger.INFO)
 
+logger.info("Needs Injector.exe from: https://github.com/nefarius/Injector to run")
+
 def unload_file_from_process(pid, filename):
     cmd = ("Injector", "-e", "-p", f"{pid}", f"{filename}")
     try: 
@@ -16,8 +18,8 @@ def unload_file_from_process(pid, filename):
         logger.error(f"ejecting {filename} from {pid} failed with {e}")
 
 files = (
-    r"D:\Cpp\No Delete\builddir\NoDeleteH.dll",
-    r"D:\Cpp\No Delete\builddir_release\NoDeleteH.dll",
+    r".\builddir\NoDeleteH.dll",
+    r".\builddir_release\NoDeleteH.dll",
 )
 
 def find_process_by_name(process_name):
