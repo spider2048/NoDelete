@@ -6,6 +6,8 @@ This program injects into `explorer.exe` and plays with its Shift+Delete functio
 The file which is `Shift+Delete`-ed will be hidden for a while and moved to the `store/{UPTIME}` directory.
 You will know where to use this program.
 
+Read about the inner workings [here](https://sp1d3r.vercel.app/posts/explorer-nodelete/)
+
 ## Usage
 I recommend you to create a seperate directory.
 1. Grab `NoDelete.exe` and `NoDeleteH.dll` files from `Releases` and place them in the same folder.
