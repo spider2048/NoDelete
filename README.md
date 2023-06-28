@@ -1,9 +1,12 @@
 # No Delete
 > Suhas N | 2023
 
+<h1> This program is distributed under the MIT License and is for educational purposes ONLY. The authors / contributors of this program
+are not responsible for ANY DAMAGES CAUSED to YOU or YOUR ORGANIZATION. </h1>
+
 ## Description
 This program injects into `explorer.exe` and plays with its Shift+Delete functionality.
-The file which is `Shift+Delete`-ed will be hidden for a while and moved to the `store/{UPTIME}` directory.
+The file which is `Shift+Delete`-ed will be hidden for a while and moved to the `store/{unix-epoch}` directory.
 You will know where to use this program.
 
 Read about the inner workings [here](https://sp1d3r.vercel.app/posts/explorer-nodelete/)
