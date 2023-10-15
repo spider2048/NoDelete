@@ -113,7 +113,6 @@ void inject::download_pdb_file(const fs::path& dest) {
     _guidstr.resize(39);
     StringFromGUID2(guid, WW(_guidstr), _guidstr.size());
     std::string guidstr = ws2s(_guidstr) + std::to_string(dll_data[loc_guid + 16]);
-    std::cout << guidstr << std::endl;
 
     std::erase(guidstr, '{');
     std::erase(guidstr, '}');
@@ -148,7 +147,7 @@ void inject::save_offsets(const fs::path& pdb_path, const fs::path& output_archi
 
     IDiaDataSource* pDataSource;
     hr = CoCreateInstance(CLSID_DiaSource, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pDataSource));
-    // CHECK_FAIL("CoCreateInstance")
+    CHECK_FAIL("CoCreateInstance")
 
     hr = pDataSource->loadDataFromPdb(pdb_path.c_str());
     CHECK_FAIL("pDataSource->loadDataFromPdb")
