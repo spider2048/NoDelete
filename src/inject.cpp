@@ -113,7 +113,6 @@ void inject::download_pdb_file(const fs::path& dest) {
     _guidstr.resize(39);
     StringFromGUID2(guid, WW(_guidstr), _guidstr.size());
     std::string guidstr = ws2s(_guidstr) + std::to_string(dll_data[loc_guid + 16]);
-    std::cout << guidstr << std::endl;
 
     std::erase(guidstr, '{');
     std::erase(guidstr, '}');
