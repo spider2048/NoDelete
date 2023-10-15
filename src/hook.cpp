@@ -10,15 +10,15 @@ fs::path                  hook::store_dir;
 std::vector<std::thread>  hook::active_threads;
 
 void hook::attach() {
-    /* dll_dir*/
-    HMODULE self = winapi::get_module_handle(TARGET_DLL);
+    /* dll_dir */
+    HMODULE self = winapi::get_module_handle("NoDeleteH.dll");
     dll_dir = fs::path(winapi::get_module_file_name(self)).parent_path();
 
     /* logging - create the log directory before injecting */
     fs::path log_dir = dll_dir / "log";
 
     auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((log_dir / fmt::format("inject_{}.log", GetCurrentProcessId())).string());
-    logger::set_default_logger(std::make_shared<spdlog::logger>("FileLogger", file_sink));
+    logger::set_default_logger(std::make_shared<spdlog::logger>("NoDeleteH", file_sink));
     logger::set_level(logger::level::debug);
     logger::flush_on(logger::level::debug);
 
@@ -28,7 +28,7 @@ void hook::attach() {
         fs::create_directory(store_dir);
 
     /* load offsets */
-    load_offsets(dll_dir / OFFSET_FILE);
+    load_offsets(dll_dir / "offsets.xml");
     uint64_t shell32_base = (uint64_t)winapi::get_module_handle("shell32.dll");
     PDeleteItemsInDataObject = (DeleteItemsInDataObject_t)(shell32_base + offsets.fn_deleteitems);
     PDlgProc = (DlgProc_t)(shell32_base + offsets.fn_dlgproc);
@@ -59,17 +59,18 @@ void hook::detach() {
     DEBUG("==== Detach Complete ====")
 }
 
+/* executes the custom callback on the selected_files object */
 void hook::file_callback(const fs::path& path) {
     try {
-		fs::path ctx_store_dir = store_dir / std::to_string(GetTickCount());
-		fs::create_directory(ctx_store_dir);
+        fs::path ctx_store_dir = store_dir / std::to_string(GetTickCount());
+        fs::create_directory(ctx_store_dir);
         fs::path new_path = ctx_store_dir / path.filename();
-		
+
         /* copy file */
         fs::copy(path, new_path, fs::copy_options::recursive);
 
         /* set attributes */
-		DWORD attribs = GetFileAttributesW(path.c_str());
+        DWORD attribs = GetFileAttributesW(path.c_str());
         attribs &= ~(FILE_ATTRIBUTE_SYSTEM);
         attribs &= ~(FILE_ATTRIBUTE_HIDDEN);
         attribs |= FILE_ATTRIBUTE_NORMAL;
@@ -84,32 +85,32 @@ void hook::file_callback(const fs::path& path) {
 
 volatile INT_PTR __fastcall hook::m_DlgProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     __try { /* Prevent most of the crashes */
-	if (message == MESSAGE_DELETE && in_delete_operation) {
-		if (wparam == DELETE_YES) {
-			wparam = DELETE_NO;
-			hide_files();
-		}
+        if (message == MESSAGE_DELETE && in_delete_operation) {
+            if (wparam == DELETE_YES) {
+                wparam = DELETE_NO;
+                hide_files();
+            }
 
-		in_delete_operation = false;
-		selected_files.clear();
-	}
+            in_delete_operation = false;
+            selected_files.clear();
+        }
 
         /* native dlgproc */
         return PDlgProc(hwnd, message, wparam, lparam);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         DEBUG("Call to native DLGPROC failed with code:{:x}", GetExceptionCode())
-        DEBUG("Arguments: HWND={} message={} wparam={} lparam={}", (void*)hwnd, (void*)message, (void*)wparam, (void*)lparam)
+        DEBUG("Arguments: HWND={} message={} wparam={} lparam={}", (void*)hwnd, message, (void*)wparam, (void*)lparam)
         return 0x2;
     }
 }
 
 volatile void __fastcall hook::m_DeleteItemsInDataObject(HWND hwnd, unsigned int param2, void* param3, IDataObject* pdo) {
     __try { /* Prevent most of the crashes */
-    selected_files.clear();
-    shell::get_files_from_do(pdo, selected_files);
+        selected_files.clear();
+        shell::get_files_from_do(pdo, selected_files);
 
-    in_delete_operation = true;
-    DEBUG("Detected delete operation with pdo:{} and files:{}", (void*)pdo, selected_files.size());
+        in_delete_operation = true;
+        DEBUG("Detected delete operation with pdo:{} and files:{}", (void*)pdo, selected_files.size());
 
         PDeleteItemsInDataObject(hwnd, param2, param3, pdo);
         pdo->Release();  // free the data object
@@ -119,9 +120,11 @@ volatile void __fastcall hook::m_DeleteItemsInDataObject(HWND hwnd, unsigned int
     }
 }
 
+/* loads offsets from offsets (xml) file */
+/* this is setup by NoDelete.exe */
 void hook::load_offsets(const fs::path& offset_file) {
     if (!fs::exists(offset_file))
-        CRITICAL("{} file doesn't exist!", OFFSET_FILE)
+        CRITICAL("offsets.xml doesn't exist!")
 
     std::ifstream           fd(offset_file);
     cereal::XMLInputArchive archive(fd);
@@ -134,6 +137,7 @@ void hook::load_offsets(const fs::path& offset_file) {
     }
 }
 
+/* hides files in the selected_files object */
 void hook::hide_files() {
     for (const auto& path : selected_files) {
         DWORD attribs = GetFileAttributesW(path.c_str());

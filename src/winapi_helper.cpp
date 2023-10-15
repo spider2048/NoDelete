@@ -7,51 +7,7 @@ namespace fs = std::filesystem;
         break;
 
 namespace winapi {
-    LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ex) {
-        std::string err;
-        switch (ex->ExceptionRecord->ExceptionCode) {
-            CASE(EXCEPTION_ACCESS_VIOLATION)
-            CASE(EXCEPTION_ARRAY_BOUNDS_EXCEEDED)
-            CASE(EXCEPTION_BREAKPOINT)
-            CASE(EXCEPTION_DATATYPE_MISALIGNMENT)
-            CASE(EXCEPTION_FLT_DENORMAL_OPERAND)
-            CASE(EXCEPTION_FLT_DIVIDE_BY_ZERO)
-            CASE(EXCEPTION_FLT_INEXACT_RESULT)
-            CASE(EXCEPTION_FLT_INVALID_OPERATION)
-            CASE(EXCEPTION_FLT_OVERFLOW)
-            CASE(EXCEPTION_FLT_STACK_CHECK)
-            CASE(EXCEPTION_FLT_UNDERFLOW)
-            CASE(EXCEPTION_ILLEGAL_INSTRUCTION)
-            CASE(EXCEPTION_IN_PAGE_ERROR)
-            CASE(EXCEPTION_INT_DIVIDE_BY_ZERO)
-            CASE(EXCEPTION_INT_OVERFLOW)
-            CASE(EXCEPTION_INVALID_DISPOSITION)
-            CASE(EXCEPTION_NONCONTINUABLE_EXCEPTION)
-            CASE(EXCEPTION_PRIV_INSTRUCTION)
-            CASE(EXCEPTION_SINGLE_STEP)
-            CASE(EXCEPTION_STACK_OVERFLOW)
-            default:
-                err += "CUSTOM ERROR";
-        }
-
-        auto rip = ex->ContextRecord->Rip;
-        auto base = winapi::get_module_handle(winapi::get_process_name(GetCurrentProcess()));
-
-        std::string errmsg = fmt::format("critical exception {:x} occured at rip={} base={} in pid:{}", err, rip, (void *)base, GetCurrentProcessId());
-        MessageBoxA(NULL, errmsg.c_str(), "Hook critical error", MB_OK | MB_ICONERROR);
-
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-
-    HMODULE load_library_as_datafile(const std::string &lib) {
-        HMODULE ret = LoadLibraryExA(lib.c_str(), NULL, LOAD_LIBRARY_AS_DATAFILE);
-        if (ret == nullptr) {
-            CRITICAL("LoadLibraryExA failed for:{}", lib);
-        }
-
-        return ret;
-    }
-
+    /* gets the windows directory of the process */
     std::filesystem::path get_windows_dir() {
         std::string dst;
         dst.resize(MAX_PATH);
@@ -65,6 +21,7 @@ namespace winapi {
         return dst;
     }
 
+    /* gets the full process name using a handle */
     std::string get_process_name(HANDLE hProcess) {
         std::string dst;
         dst.resize(MAX_PATH);
@@ -78,6 +35,7 @@ namespace winapi {
         return dst;
     }
 
+    /* gets the process base name using a handle */
     void get_process_base_name(HANDLE hProcess, std::string &dst) {
         dst.clear();
         dst.resize(MAX_PATH);
@@ -90,6 +48,7 @@ namespace winapi {
         dst.resize(sz + 1);
     }
 
+    /* gets the functoin offset using GetProcAddress */
     uint64_t get_func_offset(HMODULE hModule, const std::string &func) {
         uint64_t loaded_addr = (uint64_t)GetProcAddress(hModule, func.c_str());
         if (loaded_addr == 0) {
@@ -99,6 +58,7 @@ namespace winapi {
         return loaded_addr - (uint64_t)hModule;
     }
 
+    /* gets the module handle */
     HMODULE get_module_handle(const std::string &module) {
         HMODULE ret = GetModuleHandleA(module.c_str());
         if (ret == nullptr)
@@ -107,6 +67,7 @@ namespace winapi {
         return ret;
     }
 
+    /* gets the module file name using a handle */
     std::string get_module_file_name(HMODULE hModule) {
         std::string dst;
         dst.resize(MAX_PATH);
@@ -119,6 +80,7 @@ namespace winapi {
         return dst;
     }
 
+    /* finds a module by name in a process */
     HMODULE find_module_by_name(HANDLE hProcess, const std::string &modname) {
         DWORD modcnt = 0;
         if (!EnumProcessModules(hProcess, NULL, NULL, &modcnt)) {
@@ -147,6 +109,7 @@ namespace winapi {
         return nullptr;
     }
 
+    /* gets the cwd of the calling process */
     std::filesystem::path get_cwd() {
         std::string dir;
         dir.resize(MAX_PATH);
@@ -160,6 +123,7 @@ namespace winapi {
     }
 
     namespace remote {
+        /* gets a handle to another process by PID */
         HANDLE open(DWORD pid) {
             HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, false, pid);
             if (hProcess == INVALID_HANDLE_VALUE) {
@@ -169,6 +133,7 @@ namespace winapi {
             return hProcess;
         }
 
+        /* allocates some memory in the process (commits) */
         void *alloc(HANDLE hProcess, size_t size) {
             void *ret = VirtualAllocEx(hProcess, NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
             if (ret == NULL) {
@@ -178,12 +143,14 @@ namespace winapi {
             return ret;
         }
 
+        /* frees the allocated memory in the process */
         void free(HANDLE hProcess, void *base) {
             if (!VirtualFreeEx(hProcess, base, NULL, MEM_RELEASE)) {
                 CRITICAL("VirtualFreeEx into hProcess:{} failed!", (void *)hProcess)
             }
         }
 
+        /* writes some memory in the process' virtual memory */
         void write(HANDLE hProcess, void *dst, void *src, size_t sz) {
             size_t written = 0;
             if (!WriteProcessMemory(hProcess, dst, src, sz, &written)) {
@@ -195,6 +162,7 @@ namespace winapi {
             }
         }
 
+        /* closes the process handle */
         void close(HANDLE hProcess) { CloseHandle(hProcess); }
     };  // namespace remote
 };      // namespace winapi

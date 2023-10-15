@@ -12,11 +12,12 @@
 
 #include <windows.h>
 #include <detours.h>
+#include <TlHelp32.h>
+#include <psapi.h>
+
 #include <spdlog/spdlog.h>
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/sinks/basic_file_sink.h>
-#include <TlHelp32.h>
-#include <psapi.h>
 #include <cereal/cereal.hpp>
 #include <cereal/types/memory.hpp>
 #include <cereal/archives/xml.hpp>
@@ -43,6 +44,7 @@
     logger::debug("DetourAttach to {} returned:{}", #X, ret);
 
 #define DEBUG(FMT, ...) logger::debug("[{}:{} l{} E{}] " FMT, __FILE__, __func__, __LINE__, GetLastError(), __VA_ARGS__);
+#define INFO(FMT, ...) logger::info("[{}:{} l{} E{}] " FMT, __FILE__, __func__, __LINE__, GetLastError(), __VA_ARGS__);
 #define CRITICAL(FMT, ...)                                                                                                   \
     {                                                                                                                        \
         std::string errmsg = fmt::format("[{}:{} l{} E{}] " FMT, __FILE__, __func__, __LINE__, GetLastError(), __VA_ARGS__); \
@@ -57,8 +59,6 @@ namespace fs = std::filesystem;
 #define DELETE_YES 0x6
 #define DELETE_NO 0x2
 #define RC_DELETE 0x4203
-
-LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ex);
 
 struct fn_offsets {
     uint64_t fn_deleteitems, fn_dlgproc;

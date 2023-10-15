@@ -9,9 +9,7 @@ namespace winapi {
     HMODULE               find_module_by_name(HANDLE, const std::string&);
     std::filesystem::path get_cwd();
     std::filesystem::path get_windows_dir();
-    HMODULE               load_library_as_datafile(const std::string& lib);
     std::string           get_module_file_name(HMODULE hModule);
-    LONG WINAPI           ExceptionHandler(EXCEPTION_POINTERS* ex);
 
     namespace remote {
         HANDLE open(DWORD pid);
@@ -23,6 +21,5 @@ namespace winapi {
 };      // namespace winapi
 
 namespace shell {
-    bool is_valid_do(IDataObject* pDataObject);
     void get_files_from_do(IDataObject* pDataObject, std::vector<std::filesystem::path>& dst);
 };  // namespace shell
